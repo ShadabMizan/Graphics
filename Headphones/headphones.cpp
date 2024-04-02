@@ -1,12 +1,12 @@
 #include "geometry.h"
 #include <cstdlib>
 #include <fstream>
-#include <filesystem>
 #include <sstream>
 #include <iostream>
 #include <vector>
 
 bool readVerticesFile(std::string filename);
+
 bool computeCoordinates
 (
     const Vec3f &pWorld,            
@@ -34,10 +34,11 @@ void renderObject
 
 Matrix44f getCameraToWorld(float s1, float s2, float s3, float x, float y, float z);
 
-
+// Two vectors, one to store all vertex coordinates, and the other to store which indices of vertices in the vertices vector are linked together to make a triangle
 std::vector<Vec3f> vertices;
 std::vector<int> triangles;
 
+// Float casts for trig functions
 float cosf(float angle) { return (float)(cos(angle * std::numbers::pi/180)); }
 float sinf(float angle) { return (float)(sin(angle * std::numbers::pi/180)); }
 
@@ -49,26 +50,20 @@ int main(int argc, char const *argv[])
     }
 
     // Ex. 1
-    // Camera is placed at [0.5, -9, 3.5], rotated 77d around x and 5d around z.
-    float t1 = 77;
-    float t2 = 5;
-    Matrix44f cameraToWorld1 = 
-    {
-        cosf(t2), sinf(t2), 0, 0,
-        cosf(t1)*-sinf(t2), cosf(t1)*cosf(t2), sinf(t1), 0,
-        sinf(t1)*sinf(t2), -sinf(t1)*cosf(t2), cosf(t1), 0,
-        0.5, -9, 3.5, 1
-    };
-
-    renderObject(50, 35, 24, 0.1, 100, cameraToWorld1, "./headphones1.svg");
+    // Camera is placed at (0.5, -9, 3.5), rotated 77deg around X and 5deg around Z.
+    renderObject(50, 35, 24, 0.1, 100, getCameraToWorld(77, 0, 5, 0.5, -9, 3.5), "./headphones1.svg");
 
     // Ex. 2
-    Matrix44f cameraToWorld2 = getCameraToWorld(79, 14, 116, 7.3, 4, 3);
-    renderObject(50, 35, 24, 0.1, 100, cameraToWorld2, "./headphones2.svg");
+    // Camera looks from below the object
+    renderObject(48, 35, 24, 0.1, 100, getCameraToWorld(113, 30, 39, 5.3, -10, -2.75), "./headphones2.svg");
 
-    // Ex.3 
-    Matrix44f cameraToWorld3 = getCameraToWorld(67.2,0,-24,-3.3,-6,5);
-    renderObject(17, 35, 24, 0.1, 100, cameraToWorld3, "./headphones3.svg");
+    // Ex. 3
+    // Camera is zoomed out (focal length is smaller)
+    renderObject(17, 35, 24, 0.1, 100, getCameraToWorld(67.2, 0, -24, -3.3, -6, 5), "./headphones3.svg");
+
+    // Ex. 4
+    // Camera is zoomed in, with some vertices outside of the FOV
+    renderObject(156, 35, 24, 0.1, 100, getCameraToWorld(51, 0, -135, -7.8, 7.5, 10.2), "./headphones4.svg");
 
     return 0;
 }
@@ -142,22 +137,68 @@ bool readVerticesFile(std::string filename)
     }
 }
 
-// Taken from scratch-a-pixel source code
-// https://github.com/scratchapixel/scratchapixel-code/blob/main/3d-viewing-pinhole-camera/pinhole.cpp
-
+// [comment]
+// Get a cameraToWorld matrix, which is defined to be how the camera's transformation can be described relative to global coordinates.
+// Used to calculate coordinates in the screen space before converting to raster space.
+// First 3 parameters are rotations around x, y, and z axes respectively, and the next three describe the translation of the camera.
+// Parameters should be taken from Blender Camera settings to replicate
+// [/comment]
 Matrix44f getCameraToWorld(float s1, float s2, float s3, float x, float y, float z)
 {
-    Matrix44f cameraToWorld = 
+    // Rotation around X
+    Matrix44f rotx = 
     {
-        cosf(s2)*cosf(s3), cosf(s2)*sinf(s3), sinf(s2), 0,
-        -sinf(s1)*sinf(s2)*cosf(s3) - cosf(s1)*sinf(s3), -sinf(s1)*sinf(s2)*sinf(s3) + cosf(s1)*cosf(s3), sinf(s1)*cosf(s2), 0,
-        -cosf(s1)*sinf(s2)*cosf(s3) + sinf(s1)*sinf(s3), -cosf(s1)*sinf(s2)*sinf(s3) - sinf(s1)*cosf(s3), cosf(s1)*cosf(s2), 0,
+        1, 0, 0, 0,
+        0, cosf(s1), sinf(s1), 0,
+        0, -sinf(s1), cosf(s1), 0,
+        0, 0, 0, 1
+    };
+
+    // Rotation around Y (Negative because x-axis points in opposite direction than convenetional when looking down the y-axis)
+    Matrix44f roty = 
+    {
+        cosf(-s2), 0, sinf(-s2), 0,
+        0, 1, 0, 0,
+        -sinf(-s2), 0, cosf(-s2), 0,
+        0, 0, 0, 1
+    };
+
+    // Rotation around Z
+    Matrix44f rotz = 
+    {
+       cosf(s3), sinf(s3), 0, 0,
+       -sinf(s3), cosf(s3), 0, 0, 
+       0, 0, 1, 0,
+       0, 0, 0, 1 
+    };
+
+    // Translation to (x,y,z)
+    Matrix44f translation = 
+    {
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
         x, y, z, 1
     };
+
+    // Compose 3 Rotations and a translation together
+    Matrix44f temp;
+    Matrix44f::multiply(rotx, roty, temp);
+
+    Matrix44f temp2;
+    Matrix44f::multiply(temp, rotz, temp2);
+
+    Matrix44f cameraToWorld;
+    Matrix44f::multiply(temp2, translation, cameraToWorld);
 
     return cameraToWorld;
 }
 
+// [comment]
+// Function is adapted from https://github.com/scratchapixel/scratchapixel-code/blob/main/3d-viewing-pinhole-camera/pinhole.cpp
+// Used to compute the raster coordinates of a point in the world, returning whether that point is visible or not. 
+// However, it will also assign a Vec2<int> value to the corresponding world coordinate, which can then be drawn.
+// [/comment]
 bool computeCoordinates
 (
     const Vec3f &pWorld,            // Point in the world to transform to raster space
@@ -197,23 +238,27 @@ bool computeCoordinates
     return visible;
 }
 
+// [comment]
+// Code has been adapted from https://github.com/scratchapixel/scratchapixel-code/blob/main/3d-viewing-pinhole-camera/pinhole.cpp
+// Allows user to easily create a render of the object from camera settings they specify. 
+// [/comment]
 void renderObject
 (
-    float fLength,              // Focal Length
-    float fAW,                  // Film Aperture Width
-    float fAH,                  // Film Aperture Height
-    float nCP,                  // Near Clipping Plane
-    float fCP,                  // Far Clipping Plane
+    float fLength,              // Focal Length, mm
+    float fAW,                  // Film Aperture Width, mm
+    float fAH,                  // Film Aperture Height, mm
+    float nCP,                  // Near Clipping Plane, m
+    float fCP,                  // Far Clipping Plane, m
     Matrix44f cameraToWorld,    // Camera to World matrix, i.e. how has the camera been transformed
     std::string filename        // Output file name
 )
 {
-    // Settings taken from Blender render
-    float focalLength = fLength; // 50mm
-    float filmApertureWidth = fAW; // 35mm
-    float filmApertureHeight = fAH; // 24mm
-    float nearClippingPlane = nCP; // 0.1m
-    float farClippingPlane = fCP; // 100m
+    // Settings can be taken from Blender Camera to replicate
+    float focalLength = fLength; 
+    float filmApertureWidth = fAW; 
+    float filmApertureHeight = fAH;
+    float nearClippingPlane = nCP;
+    float farClippingPlane = fCP; 
 
     Matrix44f worldToCamera = cameraToWorld.inverse();
 
@@ -231,17 +276,22 @@ void renderObject
     ofs << "<svg version=\"1.1\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" xmlns=\"http://www.w3.org/2000/svg\" width=\"" << imageWidth << "\" height=\"" << imageHeight << "\">" << std::endl;
     for (size_t i{0}; i < triangles.size()/3; ++i)
     {
-       const Vec3f &v0World = vertices[triangles[i * 3]];
+        // Grab 3 vertices that make up a triangle
+        const Vec3f &v0World = vertices[triangles[i * 3]];
         const Vec3f &v1World = vertices[triangles[i * 3 + 1]];
         const Vec3f &v2World = vertices[triangles[i * 3 + 2]];
         Vec2i v0Raster, v1Raster, v2Raster;
 
         bool visible = true;
+
+        // Visible only if all vertices making up that triangle are in the canvas frame, and assign raster coordinates 
         visible &= computeCoordinates(v0World, worldToCamera, bottom, left, top, right, nearClippingPlane, imageWidth, imageHeight, v0Raster);
         visible &= computeCoordinates(v1World, worldToCamera, bottom, left, top, right, nearClippingPlane, imageWidth, imageHeight, v1Raster);
         visible &= computeCoordinates(v2World, worldToCamera, bottom, left, top, right, nearClippingPlane, imageWidth, imageHeight, v2Raster);
         
-        int val = visible ? 0 : 255;
+        int val = visible ? 0 : 255; // Black if visible, red if not visible
+
+        // Draw lines using svg format
         ofs << "<line x1=\"" << v0Raster.x << "\" y1=\"" << v0Raster.y << "\" x2=\"" << v1Raster.x << "\" y2=\"" << v1Raster.y << "\" style=\"stroke:rgb(" << val << ",0,0);stroke-width:1\" />\n";
         ofs << "<line x1=\"" << v1Raster.x << "\" y1=\"" << v1Raster.y << "\" x2=\"" << v2Raster.x << "\" y2=\"" << v2Raster.y << "\" style=\"stroke:rgb(" << val << ",0,0);stroke-width:1\" />\n";
         ofs << "<line x1=\"" << v2Raster.x << "\" y1=\"" << v2Raster.y << "\" x2=\"" << v0Raster.x << "\" y2=\"" << v0Raster.y << "\" style=\"stroke:rgb(" << val << ",0,0);stroke-width:1\" />\n"; 
