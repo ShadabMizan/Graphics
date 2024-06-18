@@ -1,10 +1,16 @@
 // This is a class that will create a camera object from which the scene will be rendered in.
+#pragma once
+
+#include "geometry.h"
 
 class Camera
 {
 public:
-    Camera(float focalLength, float fAW, float fAH, float nCP, float fCP);
-    
+    Camera(float focalLength, float fAW, float fAH, float nCP, float fCP, Vec3f pos, Vec3f rot);    
+    Matrix44f getCameraToWorld();
+
+    Vec3f position;     // Position in world coordinates
+    Vec3f rotation;     // Rotation ...
 private:
     float _focalLength;         // Distance between the eye and the image plane
 
